@@ -7,12 +7,16 @@ import { SQLiteProvider } from 'expo-sqlite';
 
 import { initDatabase } from './src/data/database';
 import { TransactionProvider } from './src/context/TransactionContext';
+import { AuthProvider, useAuth } from './src/context/AuthContext';
+
 import HomeScreen from './src/screens/HomeScreen';
 import TransactionListScreen from './src/screens/TransactionListScreen';
 import MonthlySummaryScreen from './src/screens/MonthlySummaryScreen';
 import AddTransactionScreen from './src/screens/AddTransactionScreen';
 import EditTransactionScreen from './src/screens/EditTransactionScreen';
 import ShopScreen from './src/screens/ShopScreen';
+import LoginScreen from './src/screens/LoginScreen';
+import RegisterScreen from './src/screens/RegisterScreen';
 import { COLORS } from './src/theme';
 
 const Stack = createNativeStackNavigator();
@@ -45,39 +49,46 @@ function MainTabs() {
   );
 }
 
+function RootNavigator() {
+  const { token } = useAuth();
+
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      {token ? (
+        <>
+          <Stack.Screen name="MainTabs" component={MainTabs} />
+          <Stack.Screen
+            name="AddTransaction"
+            component={AddTransactionScreen}
+            options={{ headerShown: true, title: 'Add Transaction', headerStyle: { backgroundColor: COLORS.card }, headerTintColor: COLORS.text }}
+          />
+          <Stack.Screen
+            name="EditTransaction"
+            component={EditTransactionScreen}
+            options={{ headerShown: true, title: 'Edit Transaction', headerStyle: { backgroundColor: COLORS.card }, headerTintColor: COLORS.text }}
+          />
+        </>
+      ) : (
+        <>
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="Register" component={RegisterScreen} />
+        </>
+      )}
+    </Stack.Navigator>
+  );
+}
+
 export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SQLiteProvider databaseName="fintracker.db" onInit={initDatabase}>
-      <TransactionProvider>
-        <NavigationContainer>
-          <Stack.Navigator>
-            <Stack.Screen
-              name="MainTabs"
-              component={MainTabs}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="AddTransaction"
-              component={AddTransactionScreen}
-              options={{
-                title: 'Add Transaction',
-                headerStyle: { backgroundColor: COLORS.card },
-                headerTintColor: COLORS.text,
-              }}
-            />
-            <Stack.Screen
-              name="EditTransaction"
-              component={EditTransactionScreen}
-              options={{
-                title: 'Edit Transaction',
-                headerStyle: { backgroundColor: COLORS.card },
-                headerTintColor: COLORS.text,
-              }}
-            />
-          </Stack.Navigator>
-        </NavigationContainer>
-      </TransactionProvider>
+        <TransactionProvider>
+          <AuthProvider>
+            <NavigationContainer>
+              <RootNavigator />
+            </NavigationContainer>
+          </AuthProvider>
+        </TransactionProvider>
       </SQLiteProvider>
     </GestureHandlerRootView>
   );
