@@ -1,4 +1,4 @@
-const BASE_URL = 'http://localhost:3000';
+const BASE_URL = 'http://192.168.0.44:3000';
 
 async function request(method, path, body, token) {
   const headers = { 'Content-Type': 'application/json' };

@@ -1,7 +1,6 @@
-import { View, Text, StyleSheet, ScrollView, SafeAreaView, Image, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useTransactions } from '../context/TransactionContext';
-import { formatCurrency, formatDate } from '../theme';
+import { useAuth } from '../context/AuthContext';
 
 const SV = {
   green: '#228B22',
@@ -19,28 +18,24 @@ const PRODUCTS = [
 ];
 
 export default function HomeScreen({ navigation }) {
-  const { getTransactions } = useTransactions();
-  const recentOrders = getTransactions().filter(t => t.categoryId === '5').slice(0, 3);
+  const { logout } = useAuth();
 
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
 
-        {/* Logo header */}
         <View style={styles.logoDiv}>
-          <Image source={require('../../assets/speedyveg-logo.png')} style={styles.logo} resizeMode="contain" />
-          <Image source={require('../../assets/veglogo.png')} style={styles.logo} resizeMode="contain" />
-        </View>
-
-        {/* Nav */}
-        <View style={styles.nav}>
-          {['What We Do', 'Products', 'Awards', 'Contact'].map(label => (
-            <Text key={label} style={styles.navText}>{label}</Text>
-          ))}
-          <TouchableOpacity onPress={() => navigation.navigate('Shop')}>
-            <Text style={[styles.navText, styles.navShop]}>🛒 Shop</Text>
+          <Text style={styles.logoText}>🥦 SpeedyVeg</Text>
+          <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
+            <Ionicons name="log-out-outline" size={22} color={SV.brown} />
+            <Text style={styles.logoutText}>Logout</Text>
           </TouchableOpacity>
         </View>
+
+        <TouchableOpacity style={styles.shopBtn} onPress={() => navigation.navigate('Shop')}>
+          <Ionicons name="cart-outline" size={20} color={SV.greenLight} />
+          <Text style={styles.shopBtnText}>Go to Shop</Text>
+        </TouchableOpacity>
 
         {/* Hero */}
         <View style={styles.heroDiv}>
@@ -136,18 +131,19 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
 
   logoDiv: {
-    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
-    backgroundColor: SV.greenLight, borderRadius: 25, margin: 8, padding: 12, gap: 16,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: SV.greenLight, borderRadius: 25, margin: 8, paddingHorizontal: 20, paddingVertical: 18,
   },
-  logo: { width: 80, height: 80 },
+  logoText: { fontSize: 28, fontWeight: '800', color: SV.brown, flex: 1, textAlign: 'center' },
+  logoutBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, padding: 6 },
+  logoutText: { color: SV.brown, fontWeight: '700', fontSize: 13 },
 
-  nav: {
-    flexDirection: 'row', justifyContent: 'space-around',
-    backgroundColor: SV.sandybrown, marginHorizontal: 8,
-    borderRadius: 12, paddingVertical: 12, marginBottom: 8,
+  shopBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, backgroundColor: SV.brown, borderRadius: 12,
+    marginHorizontal: 8, marginBottom: 8, paddingVertical: 14,
   },
-  navText: { color: SV.brown, fontWeight: '700', fontSize: 13 },
-  navShop: { color: SV.green, backgroundColor: SV.greenLight, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
+  shopBtnText: { color: SV.greenLight, fontWeight: '700', fontSize: 15 },
 
   heroDiv: {
     flexDirection: 'row', alignItems: 'center',
