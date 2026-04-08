@@ -26,10 +26,10 @@ function MainTabs() {
         tabBarStyle: { borderTopColor: '#8B4513', backgroundColor: '#ADFF2F' },
         tabBarIcon: ({ focused, color, size }) => {
           const icons = {
-            Home:   focused ? 'home'    : 'home-outline',
-            Shop:   focused ? 'cart'    : 'cart-outline',
-            Orders: focused ? 'receipt' : 'receipt-outline',
-            Admin:  focused ? 'shield'  : 'shield-outline',
+            Home:   focused ? 'home'   : 'home-outline',
+            Shop:   focused ? 'cart'   : 'cart-outline',
+            Orders: focused ? 'receipt': 'receipt-outline',
+            Admin:  focused ? 'shield' : 'shield-outline',
           };
           return <Ionicons name={icons[route.name]} size={size} color={color} />;
         },
@@ -37,7 +37,9 @@ function MainTabs() {
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Shop" component={ShopScreen} />
-      <Tab.Screen name="Orders" component={OrdersScreen} />
+      {user?.role !== 'admin' && (
+        <Tab.Screen name="Orders" component={OrdersScreen} />
+      )}
       {user?.role === 'admin' && (
         <Tab.Screen name="Admin" component={AdminScreen} />
       )}
