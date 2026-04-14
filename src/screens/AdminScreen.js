@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView,
-  Alert, TextInput, Modal, ActivityIndicator, RefreshControl,
+  Alert, TextInput, Modal, ActivityIndicator, RefreshControl, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
-import { productsAPI, ordersAPI } from '../api';
+import { productsAPI, ordersAPI, messagesAPI } from '../api';
 
 const SV = { green: '#228B22', greenLight: '#ADFF2F', brown: '#8B4513', sandybrown: '#F4A460', bg: '#228B22' };
 const UNITS = ['kg', 'g', 'bunch', 'head', 'each'];
@@ -28,6 +30,7 @@ function StatusBadge({ status }) {
 function ProductModal({ visible, product, onClose, onSave }) {
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
+  const [stock, setStock] = useState('');
   const [unit, setUnit] = useState('kg');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
@@ -37,10 +40,11 @@ function ProductModal({ visible, product, onClose, onSave }) {
   useEffect(() => {
     if (product) {
       setName(product.name); setPrice(String(product.price));
+      setStock(String(product.stock ?? 0));
       setUnit(product.unit); setDescription(product.description ?? '');
       setCategory(product.category ?? ''); setIsActive(product.isActive);
     } else {
-      setName(''); setPrice(''); setUnit('kg');
+      setName(''); setPrice(''); setStock(''); setUnit('kg');
       setDescription(''); setCategory(''); setIsActive(true);
     }
   }, [product, visible]);
@@ -49,7 +53,7 @@ function ProductModal({ visible, product, onClose, onSave }) {
     if (!name || !price) { Alert.alert('Error', 'Name and price are required.'); return; }
     setSaving(true);
     try {
-      await onSave({ name, price: parseFloat(price), unit, description, category, isActive });
+      await onSave({ name, price: parseFloat(price), stock: parseInt(stock || '0', 10), unit, description, category, isActive });
       onClose();
     } catch (err) {
       Alert.alert('Error', err.errors ? err.errors.map(e => e.msg).join('\n') : (err.message || 'Save failed.'));
@@ -66,6 +70,7 @@ function ProductModal({ visible, product, onClose, onSave }) {
 
           <TextInput style={styles.input} placeholder="Name" placeholderTextColor={SV.brown} value={name} onChangeText={setName} />
           <TextInput style={styles.input} placeholder="Price (€)" placeholderTextColor={SV.brown} value={price} onChangeText={setPrice} keyboardType="decimal-pad" />
+          <TextInput style={styles.input} placeholder="Stock (units)" placeholderTextColor={SV.brown} value={stock} onChangeText={setStock} keyboardType="number-pad" />
           <TextInput style={styles.input} placeholder="Description" placeholderTextColor={SV.brown} value={description} onChangeText={setDescription} />
           <TextInput style={styles.input} placeholder="Category" placeholderTextColor={SV.brown} value={category} onChangeText={setCategory} />
 
@@ -98,7 +103,7 @@ function ProductModal({ visible, product, onClose, onSave }) {
 // ── Main Admin Screen ─────────────────────────────────────────────────────────
 export default function AdminScreen() {
   const { token } = useAuth();
-  const [tab, setTab] = useState('orders'); // 'orders' | 'products'
+  const [tab, setTab] = useState('orders');
 
   // Products state
   const [products, setProducts] = useState([]);
@@ -110,6 +115,15 @@ export default function AdminScreen() {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [photoUrl, setPhotoUrl] = useState('');
   const [orderModal, setOrderModal] = useState(false);
+  const [trackingInputs, setTrackingInputs] = useState({});
+
+  // Messages state
+  const [msgOrder, setMsgOrder] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [msgText, setMsgText] = useState('');
+  const [msgModal, setMsgModal] = useState(false);
+  const [sendingMsg, setSendingMsg] = useState(false);
+  const [loadingMsgs, setLoadingMsgs] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -131,6 +145,7 @@ export default function AdminScreen() {
   }, [token]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+  useFocusEffect(useCallback(() => { fetchAll(); }, [fetchAll]));
 
   // ── Product actions ──────────────────────────────────────────────────────
   async function handleSaveProduct(data) {
@@ -160,7 +175,7 @@ export default function AdminScreen() {
 
   // ── Order actions ────────────────────────────────────────────────────────
   async function handleUploadPhoto() {
-    if (!photoUrl.trim()) { Alert.alert('Error', 'Enter a photo URL.'); return; }
+    if (!photoUrl.trim()) { Alert.alert('Error', 'Please pick a photo first.'); return; }
     try {
       await ordersAPI.uploadPhoto(token, selectedOrder._id, photoUrl.trim());
       setPhotoUrl('');
@@ -169,6 +184,67 @@ export default function AdminScreen() {
       Alert.alert('Done', 'Photo uploaded — customer can now approve.');
     } catch (err) {
       Alert.alert('Error', err.message || 'Could not upload photo.');
+    }
+  }
+
+  async function pickFromLibrary() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission Denied', 'We need photo library access.'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [4, 3], quality: 0.5, base64: true });
+    if (!result.canceled && result.assets[0].base64) {
+      setPhotoUrl(`data:image/jpeg;base64,${result.assets[0].base64}`);
+    }
+  }
+
+  async function takePhoto() {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission Denied', 'We need camera access.'); return; }
+    const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [4, 3], quality: 0.5, base64: true });
+    if (!result.canceled && result.assets[0].base64) {
+      setPhotoUrl(`data:image/jpeg;base64,${result.assets[0].base64}`);
+    }
+  }
+
+  async function openMessages(order) {
+    setMsgOrder(order);
+    setMsgText('');
+    setMsgModal(true);
+    setLoadingMsgs(true);
+    try {
+      const data = await messagesAPI.get(token, order._id);
+      setMessages(data);
+    } catch {
+      setMessages([]);
+    } finally {
+      setLoadingMsgs(false);
+    }
+  }
+
+  async function sendMessage() {
+    if (!msgText.trim()) return;
+    setSendingMsg(true);
+    try {
+      await messagesAPI.send(token, msgOrder._id, msgText.trim());
+      setMsgText('');
+      const updated = await messagesAPI.get(token, msgOrder._id);
+      setMessages(updated);
+    } catch (err) {
+      Alert.alert('Error', err.message || 'Could not send message.');
+    } finally {
+      setSendingMsg(false);
+    }
+  }
+
+  async function handleSetTracking(order) {
+    const trackingNumber = (trackingInputs[order._id] || '').trim();
+    if (!trackingNumber) { Alert.alert('Error', 'Enter a tracking number.'); return; }
+    try {
+      await ordersAPI.setTracking(token, order._id, trackingNumber);
+      setTrackingInputs(prev => ({ ...prev, [order._id]: '' }));
+      await fetchAll();
+      Alert.alert('Done', 'Tracking number saved — order marked as shipped.');
+    } catch (err) {
+      Alert.alert('Error', err.message || 'Could not save tracking.');
     }
   }
 
@@ -229,8 +305,26 @@ export default function AdminScreen() {
                     {order.user?.name ?? 'Unknown'} · {order.user?.email ?? ''}
                   </Text>
                   <Text style={styles.cardSub}>
-                    {order.items?.length ?? 0} item(s) · €{order.total?.toFixed(2) ?? '0.00'}
+                    {`${order.items?.length ?? 0} item(s) · €${(order.totalPrice ?? 0).toFixed(2)}`}
                   </Text>
+
+                  {/* Tracking number input — only for confirmed orders */}
+                  {order.status === 'confirmed' && (
+                    <View style={styles.trackingRow}>
+                      <TextInput
+                        style={styles.trackingInput}
+                        placeholder="Tracking number"
+                        placeholderTextColor={SV.brown}
+                        value={trackingInputs[order._id] || ''}
+                        onChangeText={v => setTrackingInputs(prev => ({ ...prev, [order._id]: v }))}
+                        autoCapitalize="characters"
+                      />
+                      <TouchableOpacity style={styles.actionBtn} onPress={() => handleSetTracking(order)}>
+                        <Ionicons name="location-outline" size={16} color={SV.greenLight} />
+                        <Text style={styles.actionBtnText}>Track</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
 
                   {/* Upload photo button — only when awaiting or denied */}
                   {(order.status === 'awaiting_photo' || order.status === 'denied') && (
@@ -248,6 +342,12 @@ export default function AdminScreen() {
                       </TouchableOpacity>
                     ))}
                   </View>
+
+                  {/* Messages button */}
+                  <TouchableOpacity style={[styles.actionBtn, { marginTop: 8 }]} onPress={() => openMessages(order)}>
+                    <Ionicons name="chatbubble-outline" size={16} color={SV.greenLight} />
+                    <Text style={styles.actionBtnText}>Messages</Text>
+                  </TouchableOpacity>
                 </View>
               ))
             }
@@ -297,24 +397,76 @@ export default function AdminScreen() {
         onSave={handleSaveProduct}
       />
 
+      {/* Messages modal */}
+      <Modal visible={msgModal} animationType="slide">
+        <SafeAreaView style={styles.safe}>
+          <View style={styles.msgHeader}>
+            <TouchableOpacity onPress={() => setMsgModal(false)}>
+              <Ionicons name="arrow-back" size={24} color={SV.brown} />
+            </TouchableOpacity>
+            <Text style={styles.msgHeaderTitle}>Order #{msgOrder?._id.slice(-6).toUpperCase()}</Text>
+          </View>
+
+          <ScrollView style={{ flex: 1, padding: 12 }}>
+            {loadingMsgs && <ActivityIndicator color={SV.greenLight} style={{ marginTop: 20 }} />}
+            {!loadingMsgs && messages.length === 0 && (
+              <Text style={styles.emptyText}>No messages yet.</Text>
+            )}
+            {messages.map(m => (
+              <View key={m._id} style={[styles.msgBubble, m.senderRole === 'admin' ? styles.msgAdmin : styles.msgUser]}>
+                <Text style={styles.msgSender}>{m.sender?.name} ({m.senderRole})</Text>
+                <Text style={styles.msgText}>{m.text}</Text>
+              </View>
+            ))}
+          </ScrollView>
+
+          <View style={styles.msgInputRow}>
+            <TextInput
+              style={styles.msgInput}
+              placeholder="Reply as admin…"
+              placeholderTextColor={SV.brown}
+              value={msgText}
+              onChangeText={setMsgText}
+            />
+            <TouchableOpacity style={styles.sendBtn} onPress={sendMessage} disabled={sendingMsg}>
+              {sendingMsg
+                ? <ActivityIndicator size="small" color={SV.greenLight} />
+                : <Ionicons name="send" size={18} color={SV.greenLight} />}
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
       {/* Upload photo modal */}
       <Modal visible={orderModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             <Text style={styles.modalTitle}>Upload Order Photo</Text>
-            <Text style={styles.cardSub}>Enter a URL for the photo of the packed order.</Text>
-            <TextInput
-              style={[styles.input, { marginTop: 12 }]}
-              placeholder="https://..."
-              placeholderTextColor={SV.brown}
-              value={photoUrl}
-              onChangeText={setPhotoUrl}
-              autoCapitalize="none"
-            />
-            <TouchableOpacity style={styles.btn} onPress={handleUploadPhoto}>
-              <Text style={styles.btnText}>Upload</Text>
+
+            <View style={styles.photoPickerRow}>
+              <TouchableOpacity style={styles.photoBtn} onPress={takePhoto}>
+                <Ionicons name="camera-outline" size={22} color={SV.greenLight} />
+                <Text style={styles.photoBtnText}>Camera</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.photoBtn} onPress={pickFromLibrary}>
+                <Ionicons name="image-outline" size={22} color={SV.greenLight} />
+                <Text style={styles.photoBtnText}>Library</Text>
+              </TouchableOpacity>
+            </View>
+
+            {photoUrl ? (
+              <Image source={{ uri: photoUrl }} style={styles.photoPreview} resizeMode="cover" />
+            ) : (
+              <View style={styles.photoPlaceholder}>
+                <Ionicons name="image-outline" size={40} color={SV.brown} />
+                <Text style={styles.cardSub}>No photo selected</Text>
+              </View>
+            )}
+
+            <TouchableOpacity style={[styles.btn, !photoUrl && { opacity: 0.5 }]} onPress={handleUploadPhoto} disabled={!photoUrl}>
+              <Text style={styles.btnText}>Upload Photo</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setOrderModal(false)}>
+            <TouchableOpacity onPress={() => { setOrderModal(false); setPhotoUrl(''); }}>
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -345,6 +497,11 @@ const styles = StyleSheet.create({
   statusBtn: { backgroundColor: SV.brown, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 },
   statusBtnText: { color: SV.greenLight, fontSize: 12, fontWeight: '600' },
   productActions: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  trackingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  trackingInput: {
+    flex: 1, backgroundColor: '#fff', borderRadius: 8, padding: 8,
+    fontSize: 13, color: SV.brown, borderWidth: 1, borderColor: SV.brown,
+  },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: SV.brown, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
   actionBtnDanger: { backgroundColor: '#EF4444' },
   actionBtnText: { color: SV.greenLight, fontSize: 13, fontWeight: '600' },
@@ -369,5 +526,19 @@ const styles = StyleSheet.create({
   toggleText: { color: SV.brown, fontSize: 14, fontWeight: '600' },
   btn: { backgroundColor: SV.brown, borderRadius: 10, padding: 14, alignItems: 'center', marginBottom: 10 },
   btnText: { color: SV.greenLight, fontWeight: '700', fontSize: 15 },
+  photoPickerRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
+  photoBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: SV.brown, borderRadius: 10, padding: 12 },
+  photoBtnText: { color: SV.greenLight, fontWeight: '700', fontSize: 14 },
+  photoPreview: { width: '100%', height: 180, borderRadius: 10, marginBottom: 12 },
+  photoPlaceholder: { width: '100%', height: 180, borderRadius: 10, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginBottom: 12, borderWidth: 1, borderColor: SV.brown },
+  msgHeaderTitle: { flex: 1, color: SV.brown, fontWeight: '700', fontSize: 16 },
+  msgBubble: { borderRadius: 10, padding: 10, marginBottom: 8, maxWidth: '80%' },
+  msgAdmin: { backgroundColor: SV.brown, alignSelf: 'flex-end' },
+  msgUser: { backgroundColor: SV.sandybrown, alignSelf: 'flex-start' },
+  msgSender: { fontSize: 11, fontWeight: '700', color: SV.greenLight, marginBottom: 2 },
+  msgText: { fontSize: 13, color: '#fff' },
+  msgInputRow: { flexDirection: 'row', gap: 8, padding: 10, alignItems: 'center', backgroundColor: SV.greenLight },
+  msgInput: { flex: 1, backgroundColor: '#fff', borderRadius: 10, padding: 10, fontSize: 14, color: SV.brown, borderWidth: 1, borderColor: SV.brown },
+  sendBtn: { backgroundColor: SV.brown, borderRadius: 10, padding: 10 },
   cancelText: { color: SV.brown, textAlign: 'center', fontSize: 14 },
 });

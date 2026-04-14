@@ -1,4 +1,4 @@
-const BASE_URL = 'http://192.168.0.44:3000';
+const BASE_URL = 'http://10.27.14.235:3000';
 
 async function request(method, path, body, token) {
   const headers = { 'Content-Type': 'application/json' };
@@ -61,7 +61,7 @@ export const ordersAPI = {
     request('GET', `/api/orders${status ? `?status=${status}` : ''}`, null, token),
   getOne: (token, id) =>
     request('GET', `/api/orders/${id}`, null, token),
-  create: (token, deliveryAddress, notes, skipApproval = false) =>
+  create: (token, deliveryAddress, notes = '', skipApproval = false) =>
     request('POST', '/api/orders', { deliveryAddress, notes, skipApproval }, token),
   uploadPhoto: (token, id, photo) =>
     request('PUT', `/api/orders/${id}/photo`, { photo }, token),
@@ -69,6 +69,8 @@ export const ordersAPI = {
     request('PUT', `/api/orders/${id}/approval`, { approved }, token),
   setStatus: (token, id, status) =>
     request('PUT', `/api/orders/${id}/status`, { status }, token),
+  setTracking: (token, id, trackingNumber) =>
+    request('PUT', `/api/orders/${id}/tracking`, { trackingNumber }, token),
   getTracking: (token, id) =>
     request('GET', `/api/orders/${id}/tracking`, null, token),
 };

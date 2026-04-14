@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "FinTracker",
-    "slug": "FinTracker",
+    "name": "SpeedyVeg",
+    "slug": "speedyveg",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -15,7 +15,7 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "com.fintracker.app",
+      "package": "com.speedyveg.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -25,9 +25,6 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    },
-    "plugins": [
-      "expo-sqlite"
-    ]
+    }
   }
 }

@@ -4,6 +4,7 @@ import {
   TouchableOpacity, Alert, ActivityIndicator, Image, RefreshControl, Modal, TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { ordersAPI, messagesAPI } from '../api';
 
@@ -26,12 +27,26 @@ function OrderDetail({ order, token, onClose, onRefresh }) {
   const [messages, setMessages] = useState([]);
   const [msgText, setMsgText] = useState('');
   const [sending, setSending] = useState(false);
+  const [tracking, setTracking] = useState(null);
+  const [trackingLoading, setTrackingLoading] = useState(false);
 
   useEffect(() => {
     messagesAPI.get(token, order._id)
       .then(setMessages)
       .catch(() => {});
   }, [order._id, token]);
+
+  async function loadTracking() {
+    setTrackingLoading(true);
+    try {
+      const data = await ordersAPI.getTracking(token, order._id);
+      setTracking(data);
+    } catch (err) {
+      Alert.alert('Error', err.message || 'Could not load tracking.');
+    } finally {
+      setTrackingLoading(false);
+    }
+  }
 
   async function sendMessage() {
     if (!msgText.trim()) return;
@@ -81,10 +96,10 @@ function OrderDetail({ order, token, onClose, onRefresh }) {
                 <Text style={styles.cardTitle}>Items</Text>
                 {order.items?.map((item, i) => (
                   <Text key={i} style={styles.itemText}>
-                    {item.quantity}x {item.product?.name} — €{((item.product?.price ?? 0) * item.quantity).toFixed(2)}
+                    {item.quantity}x {item.productName} — €{(item.lineTotal ?? 0).toFixed(2)}
                   </Text>
                 ))}
-                <Text style={styles.totalText}>Total: €{(order.total ?? order.items?.reduce((sum, i) => sum + ((i.product?.price ?? 0) * i.quantity), 0) ?? 0).toFixed(2)}</Text>
+                <Text style={styles.totalText}>Total: €{(order.totalPrice ?? order.total ?? 0).toFixed(2)}</Text>
               </View>
 
               {/* Delivery address */}
@@ -108,6 +123,31 @@ function OrderDetail({ order, token, onClose, onRefresh }) {
                       <Text style={styles.approvalBtnText}>❌ Deny</Text>
                     </TouchableOpacity>
                   </View>
+                </View>
+              )}
+
+              {/* Tracking */}
+              {(order.status === 'shipped' || order.status === 'delivered') && (
+                <View style={styles.card}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={styles.cardTitle}>Tracking</Text>
+                    <TouchableOpacity onPress={loadTracking} disabled={trackingLoading}>
+                      {trackingLoading
+                        ? <ActivityIndicator size="small" color={SV.brown} />
+                        : <Ionicons name="refresh-outline" size={18} color={SV.brown} />}
+                    </TouchableOpacity>
+                  </View>
+                  {!tracking && <Text style={styles.itemText}>Tap refresh to load live tracking.</Text>}
+                  {tracking?.message && <Text style={styles.itemText}>{tracking.message}</Text>}
+                  {tracking?.delivery?.carrier && <Text style={styles.itemText}>Carrier: {tracking.delivery.carrier}</Text>}
+                  {tracking?.cached && <Text style={[styles.itemText, { color: '#F97316' }]}>⚠️ Showing cached data</Text>}
+                  {tracking?.delivery?.events?.map((ev, i) => (
+                    <View key={i} style={styles.trackingEvent}>
+                      <Text style={styles.trackingStatus}>{ev.status}</Text>
+                      <Text style={styles.itemText}>{ev.location}</Text>
+                      <Text style={styles.itemText}>{new Date(ev.timestamp).toLocaleString()}</Text>
+                    </View>
+                  ))}
                 </View>
               )}
 
@@ -160,6 +200,7 @@ export default function OrdersScreen() {
   }, [token]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
+  useFocusEffect(useCallback(() => { fetchOrders(); }, [fetchOrders]));
 
   if (loading) {
     return (
@@ -192,7 +233,7 @@ export default function OrdersScreen() {
                 <Text style={styles.orderId}>#{item._id.slice(-6).toUpperCase()}</Text>
                 <StatusBadge status={item.status} />
               </View>
-              <Text style={styles.orderMeta}>{item.items?.length ?? 0} item(s) · €{(item.total ?? item.items?.reduce((sum, i) => sum + ((i.product?.price ?? 0) * i.quantity), 0) ?? 0).toFixed(2)}</Text>
+              <Text style={styles.orderMeta}>{item.items?.length ?? 0} item(s) · €{(item.totalPrice ?? item.total ?? 0).toFixed(2)}</Text>
               <Text style={styles.orderMeta}>{item.deliveryAddress?.city}, {item.deliveryAddress?.postcode}</Text>
               {item.status === 'photo_review' && (
                 <Text style={styles.actionNeeded}>⚠️ Photo waiting for your approval</Text>
@@ -244,6 +285,8 @@ const styles = StyleSheet.create({
   approvalRow: { flexDirection: 'row', gap: 10 },
   approvalBtn: { flex: 1, borderRadius: 10, padding: 12, alignItems: 'center' },
   approvalBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  trackingEvent: { backgroundColor: '#fff3', borderRadius: 8, padding: 8, marginBottom: 6 },
+  trackingStatus: { color: SV.brown, fontWeight: '700', fontSize: 13 },
   msgBubble: { borderRadius: 10, padding: 10, marginBottom: 8, maxWidth: '80%' },
   msgAdmin: { backgroundColor: SV.sandybrown, alignSelf: 'flex-start' },
   msgUser: { backgroundColor: SV.brown, alignSelf: 'flex-end' },

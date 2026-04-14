@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  SafeAreaView, Image, Alert, ActivityIndicator, TextInput, Modal,
+  SafeAreaView, Image, Alert, ActivityIndicator, TextInput, Modal, RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { productsAPI, basketAPI, ordersAPI, recipesAPI } from '../api';
 import { formatCurrency } from '../theme';
@@ -22,12 +23,16 @@ export default function ShopScreen({ navigation }) {
   const [loadingRecipes, setLoadingRecipes] = useState(false);
   const [recipes, setRecipes] = useState(null);
 
+  const [basketVisible, setBasketVisible] = useState(false);
+
   // Checkout modal state
   const [checkoutVisible, setCheckoutVisible] = useState(false);
   const [street, setStreet] = useState('');
   const [city, setCity] = useState('');
   const [postcode, setPostcode] = useState('');
   const [placingOrder, setPlacingOrder] = useState(false);
+
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchProducts = useCallback(async () => {
     try {
@@ -54,6 +59,7 @@ export default function ShopScreen({ navigation }) {
     fetchProducts();
     fetchBasket();
   }, [fetchProducts, fetchBasket]);
+  useFocusEffect(useCallback(() => { fetchBasket(); }, [fetchBasket]));
 
   function getQty(productId) {
     const item = basket.items?.find(i => i.product._id === productId);
@@ -89,7 +95,12 @@ export default function ShopScreen({ navigation }) {
       setStreet(''); setCity(''); setPostcode('');
       Alert.alert('Order Placed! 🥦', 'Your veg is on the way!');
     } catch (err) {
-      Alert.alert('Error', err.message || 'Could not place order.');
+      if (err.items) {
+        const lines = err.items.map(i => `• ${i.productName}: requested ${i.requested}, only ${i.available} left`).join('\n');
+        Alert.alert('Stock Issue', `Some items don't have enough stock:\n\n${lines}\n\nPlease update your basket.`);
+      } else {
+        Alert.alert('Error', err.message || 'Could not place order.');
+      }
     } finally {
       setPlacingOrder(false);
     }
@@ -119,7 +130,17 @@ export default function ShopScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.container}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={async () => { setRefreshing(true); await Promise.all([fetchProducts(), fetchBasket()]); setRefreshing(false); }}
+            tintColor={SV.greenLight}
+          />
+        }
+      >
 
         <View style={styles.header}>
           <Text style={styles.headerTitle}>🛒 SpeedyVeg Shop</Text>
@@ -128,25 +149,35 @@ export default function ShopScreen({ navigation }) {
 
         {/* Product grid */}
         <View style={styles.shopGrid}>
-          {products.map(product => (
-            <View key={product._id} style={styles.shopCard}>
+        {products.map(product => {
+            const qty = getQty(product._id);
+            const outOfStock = product.stock === 0;
+            const lowStock = product.stock > 0 && product.stock <= 3;
+            return (
+            <View key={product._id} style={[styles.shopCard, outOfStock && styles.shopCardDisabled]}>
               {product.image
                 ? <Image source={{ uri: product.image }} style={styles.shopImg} resizeMode="cover" />
                 : <View style={[styles.shopImg, styles.shopImgPlaceholder]}><Ionicons name="leaf" size={36} color={SV.brown} /></View>
               }
               <Text style={styles.shopName}>{product.name}</Text>
               <Text style={styles.shopPrice}>{formatCurrency(product.price)} / {product.unit}</Text>
-              <View style={styles.qtyRow}>
-                <TouchableOpacity style={styles.qtyBtn} onPress={() => changeQty(product._id, -1)}>
-                  <Text style={styles.qtyBtnText}>−</Text>
-                </TouchableOpacity>
-                <Text style={styles.qtyNum}>{getQty(product._id)}</Text>
-                <TouchableOpacity style={styles.qtyBtn} onPress={() => changeQty(product._id, 1)}>
-                  <Text style={styles.qtyBtnText}>+</Text>
-                </TouchableOpacity>
-              </View>
+              {outOfStock && <Text style={styles.outOfStock}>Out of stock</Text>}
+              {lowStock && <Text style={styles.lowStock}>Only {product.stock} left!</Text>}
+              {!outOfStock && !lowStock && <Text style={styles.stockOk}>In stock: {product.stock}</Text>}
+              {!outOfStock && (
+                <View style={styles.qtyRow}>
+                  <TouchableOpacity style={styles.qtyBtn} onPress={() => changeQty(product._id, -1)}>
+                    <Text style={styles.qtyBtnText}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.qtyNum}>{qty}</Text>
+                  <TouchableOpacity style={styles.qtyBtn} onPress={() => changeQty(product._id, 1)}>
+                    <Text style={styles.qtyBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
-          ))}
+            );
+          })}
         </View>
 
         {/* Basket bar */}
@@ -156,6 +187,9 @@ export default function ShopScreen({ navigation }) {
               ? `${basket.items.length} item${basket.items.length > 1 ? 's' : ''} — ${formatCurrency(basket.total)}`
               : 'Your basket is empty'}
           </Text>
+          <TouchableOpacity style={styles.viewBasketBtn} onPress={() => setBasketVisible(true)}>
+            <Text style={styles.checkoutText}>View Basket</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.checkoutBtn} onPress={() => setCheckoutVisible(true)}>
             <Text style={styles.checkoutText}>Order Now</Text>
           </TouchableOpacity>
@@ -182,6 +216,42 @@ export default function ShopScreen({ navigation }) {
         )}
 
       </ScrollView>
+
+      {/* Basket modal */}
+      <Modal visible={basketVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>🛒 Your Basket</Text>
+            {!basket.items?.length
+              ? <Text style={styles.cancelText}>Your basket is empty.</Text>
+              : basket.items.map(item => (
+                <View key={item.product._id} style={styles.basketItem}>
+                  <Text style={styles.basketItemName} numberOfLines={1}>{item.product.name}</Text>
+                  <View style={styles.basketItemControls}>
+                    <TouchableOpacity style={styles.qtyBtnSm} onPress={() => changeQty(item.product._id, -1)}>
+                      <Text style={styles.qtyBtnText}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.qtyNum}>{item.quantity}</Text>
+                    <TouchableOpacity style={styles.qtyBtnSm} onPress={() => changeQty(item.product._id, 1)}>
+                      <Text style={styles.qtyBtnText}>+</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.removeBtn} onPress={() => changeQty(item.product._id, -item.quantity)}>
+                      <Ionicons name="trash-outline" size={16} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.basketItemPrice}>{formatCurrency((item.product.price ?? 0) * item.quantity)}</Text>
+                </View>
+              ))
+            }
+            {basket.items?.length > 0 && (
+              <Text style={styles.basketTotal}>Total: {formatCurrency(basket.total)}</Text>
+            )}
+            <TouchableOpacity style={styles.btn} onPress={() => setBasketVisible(false)}>
+              <Text style={styles.btnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Checkout modal */}
       <Modal visible={checkoutVisible} animationType="slide" transparent>
@@ -219,7 +289,10 @@ const styles = StyleSheet.create({
     alignItems: 'center', padding: 10, borderWidth: 2, borderColor: SV.brown,
   },
   shopImg: { width: 80, height: 80, borderRadius: 8, marginBottom: 6 },
-  shopImgPlaceholder: { justifyContent: 'center', alignItems: 'center', backgroundColor: SV.sandybrown },
+  shopCardDisabled: { opacity: 0.6 },
+  outOfStock: { color: '#EF4444', fontWeight: '700', fontSize: 12, marginBottom: 4 },
+  lowStock: { color: '#F97316', fontWeight: '700', fontSize: 12, marginBottom: 4 },
+  stockOk: { color: SV.green, fontWeight: '600', fontSize: 12, marginBottom: 4 },
   shopName: { color: SV.brown, fontWeight: '700', fontSize: 15 },
   shopPrice: { color: SV.brown, fontSize: 13, marginBottom: 8 },
   qtyRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -234,8 +307,16 @@ const styles = StyleSheet.create({
     backgroundColor: SV.brown, borderRadius: 12, padding: 14, marginBottom: 8,
   },
   basketText: { color: SV.greenLight, fontWeight: '600', fontSize: 14, flex: 1 },
+  viewBasketBtn: { backgroundColor: SV.sandybrown, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginRight: 6 },
   checkoutBtn: { backgroundColor: SV.greenLight, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8 },
   checkoutText: { color: SV.brown, fontWeight: '700', fontSize: 14 },
+  basketItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 6 },
+  basketItemName: { flex: 1, color: SV.brown, fontWeight: '600', fontSize: 14 },
+  basketItemControls: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  basketItemPrice: { color: SV.brown, fontWeight: '700', fontSize: 13, minWidth: 48, textAlign: 'right' },
+  qtyBtnSm: { backgroundColor: SV.brown, width: 26, height: 26, borderRadius: 13, justifyContent: 'center', alignItems: 'center' },
+  removeBtn: { backgroundColor: '#EF4444', width: 26, height: 26, borderRadius: 13, justifyContent: 'center', alignItems: 'center' },
+  basketTotal: { color: SV.brown, fontWeight: '700', fontSize: 16, textAlign: 'right', marginBottom: 12 },
   recipeBar: {
     backgroundColor: SV.sandybrown, borderRadius: 12, padding: 14,
     alignItems: 'center', marginBottom: 12,
