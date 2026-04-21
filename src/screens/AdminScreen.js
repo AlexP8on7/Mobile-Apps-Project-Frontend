@@ -1,19 +1,19 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView,
-  Alert, TextInput, Modal, ActivityIndicator, RefreshControl, Image,
+  Alert, TextInput, Modal, ActivityIndicator, RefreshControl, Image, FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
-import { productsAPI, ordersAPI, messagesAPI } from '../api';
+import { productsAPI, ordersAPI, messagesAPI, specialsAPI } from '../api';
 
 const SV = { green: '#228B22', greenLight: '#ADFF2F', brown: '#8B4513', sandybrown: '#F4A460', bg: '#228B22' };
 const UNITS = ['kg', 'g', 'bunch', 'head', 'each'];
 const ORDER_STATUSES = ['confirmed', 'shipped', 'delivered', 'cancelled'];
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// Helpers
 function StatusBadge({ status }) {
   const colors = {
     awaiting_photo: '#F97316', photo_review: '#3B82F6', denied: '#EF4444',
@@ -26,7 +26,7 @@ function StatusBadge({ status }) {
   );
 }
 
-// ── Product Form Modal ────────────────────────────────────────────────────────
+// Product Form Modal
 function ProductModal({ visible, product, onClose, onSave }) {
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
@@ -35,6 +35,7 @@ function ProductModal({ visible, product, onClose, onSave }) {
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
   const [isActive, setIsActive] = useState(true);
+  const [image, setImage] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -43,17 +44,30 @@ function ProductModal({ visible, product, onClose, onSave }) {
       setStock(String(product.stock ?? 0));
       setUnit(product.unit); setDescription(product.description ?? '');
       setCategory(product.category ?? ''); setIsActive(product.isActive);
+      setImage(product.image ?? '');
     } else {
       setName(''); setPrice(''); setStock(''); setUnit('kg');
-      setDescription(''); setCategory(''); setIsActive(true);
+      setDescription(''); setCategory(''); setIsActive(true); setImage('');
     }
   }, [product, visible]);
+
+  async function pickImage(useCamera) {
+    const picker = useCamera ? ImagePicker.launchCameraAsync : ImagePicker.launchImageLibraryAsync;
+    const perm = useCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (perm.status !== 'granted') { Alert.alert('Permission Denied'); return; }
+    const result = await picker({ allowsEditing: true, aspect: [1, 1], quality: 0.5, base64: true });
+    if (!result.canceled && result.assets[0].base64) {
+      setImage(`data:image/jpeg;base64,${result.assets[0].base64}`);
+    }
+  }
 
   async function handleSave() {
     if (!name || !price) { Alert.alert('Error', 'Name and price are required.'); return; }
     setSaving(true);
     try {
-      await onSave({ name, price: parseFloat(price), stock: parseInt(stock || '0', 10), unit, description, category, isActive });
+      await onSave({ name, price: parseFloat(price), stock: parseInt(stock || '0', 10), unit, description, category, isActive, image });
       onClose();
     } catch (err) {
       Alert.alert('Error', err.errors ? err.errors.map(e => e.msg).join('\n') : (err.message || 'Save failed.'));
@@ -83,6 +97,22 @@ function ProductModal({ visible, product, onClose, onSave }) {
             ))}
           </View>
 
+          <Text style={styles.label}>Product Image</Text>
+          <View style={styles.photoPickerRow}>
+            <TouchableOpacity style={styles.photoBtn} onPress={() => pickImage(true)}>
+              <Ionicons name="camera-outline" size={22} color={SV.greenLight} />
+              <Text style={styles.photoBtnText}>Camera</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.photoBtn} onPress={() => pickImage(false)}>
+              <Ionicons name="image-outline" size={22} color={SV.greenLight} />
+              <Text style={styles.photoBtnText}>Library</Text>
+            </TouchableOpacity>
+          </View>
+          {image
+            ? <Image source={{ uri: image }} style={styles.photoPreview} resizeMode="cover" />
+            : <View style={styles.photoPlaceholder}><Ionicons name="image-outline" size={40} color={SV.brown} /></View>
+          }
+
           <TouchableOpacity style={styles.toggleRow} onPress={() => setIsActive(v => !v)}>
             <Ionicons name={isActive ? 'checkmark-circle' : 'close-circle'} size={22} color={isActive ? SV.green : '#EF4444'} />
             <Text style={styles.toggleText}>{isActive ? 'Active' : 'Inactive'}</Text>
@@ -100,30 +130,31 @@ function ProductModal({ visible, product, onClose, onSave }) {
   );
 }
 
-// ── Main Admin Screen ─────────────────────────────────────────────────────────
+// Main Admin Screen
 export default function AdminScreen() {
   const { token } = useAuth();
   const [tab, setTab] = useState('orders');
 
-  // Products state
+  // Products
   const [products, setProducts] = useState([]);
   const [productModal, setProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
 
-  // Orders state
+  // Orders
   const [orders, setOrders] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [photoUrl, setPhotoUrl] = useState('');
   const [orderModal, setOrderModal] = useState(false);
   const [trackingInputs, setTrackingInputs] = useState({});
 
-  // Messages state
+  // Messages
   const [msgOrder, setMsgOrder] = useState(null);
   const [messages, setMessages] = useState([]);
   const [msgText, setMsgText] = useState('');
   const [msgModal, setMsgModal] = useState(false);
   const [sendingMsg, setSendingMsg] = useState(false);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -147,7 +178,7 @@ export default function AdminScreen() {
   useEffect(() => { fetchAll(); }, [fetchAll]);
   useFocusEffect(useCallback(() => { fetchAll(); }, [fetchAll]));
 
-  // ── Product actions ──────────────────────────────────────────────────────
+  // Product actions
   async function handleSaveProduct(data) {
     if (editingProduct) {
       await productsAPI.update(token, editingProduct._id, data);
@@ -173,7 +204,7 @@ export default function AdminScreen() {
     ]);
   }
 
-  // ── Order actions ────────────────────────────────────────────────────────
+  // Order actions
   async function handleUploadPhoto() {
     if (!photoUrl.trim()) { Alert.alert('Error', 'Please pick a photo first.'); return; }
     try {
@@ -262,6 +293,18 @@ export default function AdminScreen() {
         },
       },
     ]);
+  }
+
+  async function handleRegenerateSpecials() {
+    setRegenerating(true);
+    try {
+      await specialsAPI.regenerate(token);
+      Alert.alert('Done', 'Featured products updated!');
+    } catch (err) {
+      Alert.alert('Error', err.error || err.message || 'Could not regenerate specials.');
+    } finally {
+      setRegenerating(false);
+    }
   }
 
   if (loading) {
@@ -362,6 +405,21 @@ export default function AdminScreen() {
               <Text style={styles.addBtnText}>Add Product</Text>
             </TouchableOpacity>
 
+            <TouchableOpacity
+              style={[styles.addBtn, { backgroundColor: SV.green }]}
+              onPress={handleRegenerateSpecials}
+              disabled={regenerating}
+            >
+              {regenerating ? (
+                <ActivityIndicator size="small" color={SV.greenLight} />
+              ) : (
+                <Ionicons name="refresh-outline" size={20} color={SV.greenLight} />
+              )}
+              <Text style={[styles.addBtnText, { color: SV.greenLight }]}>
+                {regenerating ? 'Refreshing...' : 'Refresh Featured Products'}
+              </Text>
+            </TouchableOpacity>
+
             {products.map(product => (
               <View key={product._id} style={styles.card}>
                 <View style={styles.cardHeader}>
@@ -405,35 +463,58 @@ export default function AdminScreen() {
               <Ionicons name="arrow-back" size={24} color={SV.brown} />
             </TouchableOpacity>
             <Text style={styles.msgHeaderTitle}>Order #{msgOrder?._id.slice(-6).toUpperCase()}</Text>
+            {msgOrder && <StatusBadge status={msgOrder.status} />}
           </View>
 
-          <ScrollView style={{ flex: 1, padding: 12 }}>
-            {loadingMsgs && <ActivityIndicator color={SV.greenLight} style={{ marginTop: 20 }} />}
-            {!loadingMsgs && messages.length === 0 && (
-              <Text style={styles.emptyText}>No messages yet.</Text>
-            )}
-            {messages.map(m => (
-              <View key={m._id} style={[styles.msgBubble, m.senderRole === 'admin' ? styles.msgAdmin : styles.msgUser]}>
+          <FlatList
+            data={messages}
+            keyExtractor={m => m._id}
+            contentContainerStyle={{ padding: 12 }}
+            ListHeaderComponent={
+              <View>
+                <View style={styles.msgCard}>
+                  <Text style={styles.cardTitle}>Items</Text>
+                  {msgOrder?.items?.map((item, i) => (
+                    <Text key={i} style={styles.cardSub}>
+                      {item.quantity}x {item.productName} — €{(item.lineTotal ?? 0).toFixed(2)}
+                    </Text>
+                  ))}
+                  <Text style={[styles.cardTitle, { marginTop: 6 }]}>Total: €{(msgOrder?.totalPrice ?? 0).toFixed(2)}</Text>
+                </View>
+                <View style={styles.msgCard}>
+                  <Text style={styles.cardTitle}>Delivery Address</Text>
+                  <Text style={styles.cardSub}>{msgOrder?.deliveryAddress?.street}</Text>
+                  <Text style={styles.cardSub}>{msgOrder?.deliveryAddress?.city}, {msgOrder?.deliveryAddress?.postcode}</Text>
+                  <Text style={styles.cardSub}>{msgOrder?.deliveryAddress?.country}</Text>
+                </View>
+                {loadingMsgs && <ActivityIndicator color={SV.greenLight} style={{ marginVertical: 20 }} />}
+                {!loadingMsgs && messages.length === 0 && <Text style={styles.emptyText}>No messages yet.</Text>}
+                {messages.length > 0 && <Text style={styles.cardTitle}>Messages</Text>}
+              </View>
+            }
+            renderItem={({ item: m }) => (
+              <View style={[styles.msgBubble, m.senderRole === 'admin' ? styles.msgAdmin : styles.msgUser]}>
                 <Text style={styles.msgSender}>{m.sender?.name} ({m.senderRole})</Text>
                 <Text style={styles.msgText}>{m.text}</Text>
               </View>
-            ))}
-          </ScrollView>
-
-          <View style={styles.msgInputRow}>
-            <TextInput
-              style={styles.msgInput}
-              placeholder="Reply as admin…"
-              placeholderTextColor={SV.brown}
-              value={msgText}
-              onChangeText={setMsgText}
-            />
-            <TouchableOpacity style={styles.sendBtn} onPress={sendMessage} disabled={sendingMsg}>
-              {sendingMsg
-                ? <ActivityIndicator size="small" color={SV.greenLight} />
-                : <Ionicons name="send" size={18} color={SV.greenLight} />}
-            </TouchableOpacity>
-          </View>
+            )}
+            ListFooterComponent={
+              <View style={styles.msgInputRow}>
+                <TextInput
+                  style={styles.msgInput}
+                  placeholder="Reply as admin…"
+                  placeholderTextColor={SV.brown}
+                  value={msgText}
+                  onChangeText={setMsgText}
+                />
+                <TouchableOpacity style={styles.sendBtn} onPress={sendMessage} disabled={sendingMsg}>
+                  {sendingMsg
+                    ? <ActivityIndicator size="small" color={SV.greenLight} />
+                    : <Ionicons name="send" size={18} color={SV.greenLight} />}
+                </TouchableOpacity>
+              </View>
+            }
+          />
         </SafeAreaView>
       </Modal>
 
@@ -508,7 +589,7 @@ const styles = StyleSheet.create({
   addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: SV.sandybrown, borderRadius: 10, padding: 12, marginBottom: 10 },
   addBtnText: { color: SV.brown, fontWeight: '700', fontSize: 15 },
   emptyText: { color: SV.greenLight, textAlign: 'center', marginTop: 40, fontSize: 15 },
-  // Modal
+  // Modal styles
   modalOverlay: { flex: 1, backgroundColor: '#00000088', justifyContent: 'center', padding: 24 },
   modalBox: { backgroundColor: SV.greenLight, borderRadius: 16, padding: 20 },
   modalTitle: { color: SV.brown, fontSize: 18, fontWeight: '700', marginBottom: 12 },
@@ -531,14 +612,16 @@ const styles = StyleSheet.create({
   photoBtnText: { color: SV.greenLight, fontWeight: '700', fontSize: 14 },
   photoPreview: { width: '100%', height: 180, borderRadius: 10, marginBottom: 12 },
   photoPlaceholder: { width: '100%', height: 180, borderRadius: 10, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginBottom: 12, borderWidth: 1, borderColor: SV.brown },
+  msgCard: { backgroundColor: SV.sandybrown, borderRadius: 12, padding: 12, marginBottom: 10 },
+  msgHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: SV.greenLight, padding: 14 },
   msgHeaderTitle: { flex: 1, color: SV.brown, fontWeight: '700', fontSize: 16 },
   msgBubble: { borderRadius: 10, padding: 10, marginBottom: 8, maxWidth: '80%' },
-  msgAdmin: { backgroundColor: SV.brown, alignSelf: 'flex-end' },
-  msgUser: { backgroundColor: SV.sandybrown, alignSelf: 'flex-start' },
+  msgAdmin: { backgroundColor: SV.sandybrown, alignSelf: 'flex-start' },
+  msgUser: { backgroundColor: SV.brown, alignSelf: 'flex-end' },
   msgSender: { fontSize: 11, fontWeight: '700', color: SV.greenLight, marginBottom: 2 },
   msgText: { fontSize: 13, color: '#fff' },
-  msgInputRow: { flexDirection: 'row', gap: 8, padding: 10, alignItems: 'center', backgroundColor: SV.greenLight },
-  msgInput: { flex: 1, backgroundColor: '#fff', borderRadius: 10, padding: 10, fontSize: 14, color: SV.brown, borderWidth: 1, borderColor: SV.brown },
+  msgInputRow: { flexDirection: 'row', gap: 8, padding: 8, alignItems: 'center', backgroundColor: SV.greenLight },
+  msgInput: { flex: 1, backgroundColor: SV.greenLight, borderRadius: 10, padding: 10, fontSize: 14, color: SV.brown },
   sendBtn: { backgroundColor: SV.brown, borderRadius: 10, padding: 10 },
   cancelText: { color: SV.brown, textAlign: 'center', fontSize: 14 },
 });

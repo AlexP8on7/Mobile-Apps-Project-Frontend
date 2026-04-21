@@ -1,7 +1,7 @@
-const BASE_URL = 'http://10.27.14.235:3000';
+const BASE_URL = 'http://52.6.166.111:8081';
 
 async function request(method, path, body, token) {
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -10,89 +10,100 @@ async function request(method, path, body, token) {
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  const data = await res.json();
+  const text = await res.text();
+  if (res.status === 204 || !text) return null;
+  let data;
+  try { data = JSON.parse(text); } catch { throw { status: res.status, message: text }; }
   if (!res.ok) throw { status: res.status, ...data };
   return data;
 }
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
+// Auth
 export const authAPI = {
   register: (name, email, password) =>
-    request('POST', '/api/auth/register', { name, email, password }),
+    request('POST', '/backend/auth/register', { name, email, password }),
   login: (email, password) =>
-    request('POST', '/api/auth/login', { email, password }),
+    request('POST', '/backend/auth/login', { email, password }),
   getMe: (token) =>
-    request('GET', '/api/auth/me', null, token),
+    request('GET', '/backend/auth/me', null, token),
   updateMe: (token, data) =>
-    request('PUT', '/api/auth/me', data, token),
+    request('PUT', '/backend/auth/me', data, token),
 };
 
-// ── Products ──────────────────────────────────────────────────────────────────
+// Products
 export const productsAPI = {
   getAll: () =>
-    request('GET', '/api/products'),
+    request('GET', '/backend/products'),
   getOne: (id) =>
-    request('GET', `/api/products/${id}`),
+    request('GET', `/backend/products/${id}`),
   create: (token, data) =>
-    request('POST', '/api/products', data, token),
+    request('POST', '/backend/products', data, token),
   update: (token, id, data) =>
-    request('PUT', `/api/products/${id}`, data, token),
+    request('PUT', `/backend/products/${id}`, data, token),
   remove: (token, id) =>
-    request('DELETE', `/api/products/${id}`, null, token),
+    request('DELETE', `/backend/products/${id}`, null, token),
 };
 
-// ── Basket ────────────────────────────────────────────────────────────────────
+// Basket
 export const basketAPI = {
   get: (token) =>
-    request('GET', '/api/basket', null, token),
+    request('GET', '/backend/basket', null, token),
   addItem: (token, productId, quantity = 1) =>
-    request('POST', '/api/basket/items', { productId, quantity }, token),
+    request('POST', '/backend/basket/items', { productId, quantity }, token),
   setQuantity: (token, productId, quantity) =>
-    request('PUT', `/api/basket/items/${productId}`, { quantity }, token),
+    request('PUT', `/backend/basket/items/${productId}`, { quantity }, token),
   removeItem: (token, productId) =>
-    request('DELETE', `/api/basket/items/${productId}`, null, token),
+    request('DELETE', `/backend/basket/items/${productId}`, null, token),
   clear: (token) =>
-    request('DELETE', '/api/basket', null, token),
+    request('DELETE', '/backend/basket', null, token),
 };
 
-// ── Orders ────────────────────────────────────────────────────────────────────
+// Orders
 export const ordersAPI = {
   getAll: (token, status) =>
-    request('GET', `/api/orders${status ? `?status=${status}` : ''}`, null, token),
+    request('GET', `/backend/orders${status ? `?status=${status}` : ''}`, null, token),
   getOne: (token, id) =>
-    request('GET', `/api/orders/${id}`, null, token),
+    request('GET', `/backend/orders/${id}`, null, token),
   create: (token, deliveryAddress, notes = '', skipApproval = false) =>
-    request('POST', '/api/orders', { deliveryAddress, notes, skipApproval }, token),
+    request('POST', '/backend/orders', { deliveryAddress, notes, skipApproval }, token),
   uploadPhoto: (token, id, photo) =>
-    request('PUT', `/api/orders/${id}/photo`, { photo }, token),
+    request('PUT', `/backend/orders/${id}/photo`, { photo }, token),
   approve: (token, id, approved) =>
-    request('PUT', `/api/orders/${id}/approval`, { approved }, token),
+    request('PUT', `/backend/orders/${id}/approval`, { approved }, token),
   setStatus: (token, id, status) =>
-    request('PUT', `/api/orders/${id}/status`, { status }, token),
+    request('PUT', `/backend/orders/${id}/status`, { status }, token),
   setTracking: (token, id, trackingNumber) =>
-    request('PUT', `/api/orders/${id}/tracking`, { trackingNumber }, token),
+    request('PUT', `/backend/orders/${id}/tracking`, { trackingNumber }, token),
   getTracking: (token, id) =>
-    request('GET', `/api/orders/${id}/tracking`, null, token),
+    request('GET', `/backend/orders/${id}/tracking`, null, token),
 };
 
-// ── Messages ──────────────────────────────────────────────────────────────────
+// Messages
 export const messagesAPI = {
   get: (token, orderId) =>
-    request('GET', `/api/orders/${orderId}/messages`, null, token),
+    request('GET', `/backend/orders/${orderId}/messages`, null, token),
   send: (token, orderId, text) =>
-    request('POST', `/api/orders/${orderId}/messages`, { text }, token),
+    request('POST', `/backend/orders/${orderId}/messages`, { text }, token),
 };
 
-// ── Recipes ───────────────────────────────────────────────────────────────────
+// Recipes
 export const recipesAPI = {
   fromCart: (token) =>
-    request('GET', '/api/recipes/from-cart', null, token),
+    request('GET', '/backend/recipes/from-cart', null, token),
   getByName: (token, name) =>
-    request('GET', `/api/recipes/${encodeURIComponent(name)}`, null, token),
+    request('GET', `/backend/recipes/${encodeURIComponent(name)}`, null, token),
 };
 
-// ── Chat ──────────────────────────────────────────────────────────────────────
+// Specials
+export const specialsAPI = {
+  get: (token) =>
+    request('GET', '/backend/specials', null, token),
+  regenerate: (token) =>
+    request('POST', '/backend/specials/regenerate', null, token),
+};
+
+// Chat
 export const chatAPI = {
   send: (token, messages) =>
-    request('POST', '/api/chat', { messages }, token),
+    request('POST', '/backend/chat', { messages }, token),
 };

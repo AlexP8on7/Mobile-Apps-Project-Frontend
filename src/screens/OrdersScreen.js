@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
   badgeText: { color: '#fff', fontSize: 11, fontWeight: '700', textTransform: 'capitalize' },
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   emptyText: { fontSize: 16, color: SV.greenLight, fontWeight: '600' },
-  // Detail modal
+  // Detail modal styles
   detailHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: SV.greenLight, padding: 14,

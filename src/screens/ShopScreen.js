@@ -51,7 +51,7 @@ export default function ShopScreen({ navigation }) {
       const data = await basketAPI.get(token);
       setBasket(data);
     } catch {
-      // basket may be empty — ignore
+      // basket may be empty, ignore
     }
   }, [token]);
 
@@ -283,7 +283,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: { color: SV.brown, fontSize: 22, fontWeight: '700' },
   headerSub: { color: SV.brown, fontSize: 13, marginTop: 2 },
-  shopGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  shopGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12, justifyContent: 'center' },
   shopCard: {
     width: '47%', backgroundColor: SV.greenLight, borderRadius: 12,
     alignItems: 'center', padding: 10, borderWidth: 2, borderColor: SV.brown,
@@ -327,7 +327,7 @@ const styles = StyleSheet.create({
   recipeCard: { marginBottom: 10 },
   recipeName: { color: SV.brown, fontWeight: '700', fontSize: 14 },
   recipeDesc: { color: '#5a3010', fontSize: 13 },
-  // Modal
+  // Modal styles
   modalOverlay: { flex: 1, backgroundColor: '#00000088', justifyContent: 'center', padding: 24 },
   modalBox: { backgroundColor: SV.greenLight, borderRadius: 16, padding: 20 },
   modalTitle: { color: SV.brown, fontSize: 18, fontWeight: '700', marginBottom: 16 },
